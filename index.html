@@ -1,0 +1,777 @@
+<!doctype html>
+<!--
+Copyright 2023 Foster Electric Co., Ltd.
+Released under the MIT license
+-->
+<html>
+  <style>
+    .flex {
+        display: -webkit-flex;
+        display: -moz-flex;
+        display: -ms-flex;
+        display: -o-flex;
+        display: flex;
+        gap: 6px 6px;
+    }    
+    .flex p{
+        display: -webkit-flex;
+        display: -moz-flex;
+        display: -ms-flex;
+        display: -o-flex;
+        display: flex;
+        gap: 6px 6px;
+        flex-direction: column;
+    }    
+  </style>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="description" content="Foster Hearable">
+    <meta name="viewport" content="width=640, maximum-scale=1.0, user-scalable=yes">
+    <title>Foster Hearable</title>
+    <link rel="stylesheet" href="./components/simple.css"> 
+  </head>
+<body>
+<div class="container">
+    <h1>Foster Hearable</h1>
+    <p>Multi Trace Frontend</p>
+
+    <div class="flex" >
+        <p>
+            <canvas id="canvas_1a" width="200px" height="200px"></canvas>
+            <canvas id="canvas_1b" width="200px" height="200px"></canvas>
+        <p>
+            <canvas id="canvas_2a" width="500px" height="200px"></canvas>
+            <canvas id="canvas_2b" width="500px" height="200px"></canvas>
+            <canvas id="canvas_2c" width="500px" height="200px"></canvas>    
+        </p>
+    </div>
+    <br/>
+    <div class="flex" >
+        <button id="startNotifications" class="button">Start Notify</button>
+        <button id="stopNotifications" class="button">Stop Notify</button>
+        <button id="MultiFunctionButton" class="button">Reposition</button>
+    </div>
+    <br/>
+    <div class="flex" >
+        <label>WebSocket URL : <input type="text" id="ws_url" size="40" value="ws://127.0.0.1:6301"></label>
+        <button id="WebSocket" class="button">Connect</button>    
+        <button id="CSVDownload" class="button" font-size="10.0em"><font size="2.0rem">CSV Download</font></button>    
+    </div>
+    <div class="code"><pre>
+    <span id="device_name"> </span>
+    <span id="uuid_name"> </span>
+    <span id="status"> </span></pre>
+    </div>
+    <hr>
+    <div class="footer">
+        For more information, see <a href="https://github.com/foster-hearable/HeadTracker" target="_blank">GitHub</a> !
+    </div>
+</div>
+
+<script type="importmap">
+    {
+        "imports": {
+            "three": "./components/three.module.js"
+        }
+    }
+</script>
+<script type="text/javascript" src="./components/bluejelly.js"></script>
+<script type="text/javascript" src="./components/RobinAHRS.js"></script>
+
+
+
+<!--=======================================================================================-->
+<script>
+    robinAHRS = new RobinAHRS(25)
+    gyro_mode = 0x00
+    //robinAHRS = new RobinAHRS(100)
+    //gyro_mode = 0x03
+
+    //--------------------------------------------------
+    //Globals
+    //--------------------------------------------------
+    gStatus   = 0
+    var flgStatus = {
+        'WEAR'  : 1<<0,
+        'TOUCH' : 1<<1,
+        'OPENED': 1<<7,
+    }
+
+    Reposition = function (){
+        console.log("> Reset Home Position.")
+        document.getElementById('status').innerHTML = "Reset: Home Position."
+        robinAHRS.reposition()
+    }
+
+    gPPG = []
+    gPPM     = -1
+    gPPGPeakPos = 0
+    gPPGPeakNeg = 0
+
+    gPPG_Phase = 1
+    ppg_invert = function() {
+        if (gPPG_Phase > 0) {
+            gPPG_Phase = -1
+        } else {
+            gPPG_Phase =  1
+        }
+        console.log("PPG Phase : " + gPPG_Phase)
+    }
+
+    gTempTb = -1
+    gTempK  = -1
+    gTempTi = -1
+    gTempTo = -1
+    gBodyTemp = -1
+    gTempCoef = -1
+</script>
+
+<script>
+    //--------------------------------------------------
+    //Web Bluetooth Wrappers
+    //--------------------------------------------------
+    const ble = new BlueJelly(namePrefix="LE-RN");
+
+    //--------------------------------------------------
+    ble.onScan = function (deviceName) {
+        console.log('onScan() : ' + deviceName)
+        document.getElementById('device_name').innerHTML = deviceName;
+        document.getElementById('status').innerHTML = "found device!";
+
+        gStatus |= flgStatus.OPENED
+    }
+
+    //--------------------------------------------------
+    ble.onConnectGATT = function (uuid) {
+        console.log('> connected GATT!');
+
+        document.getElementById('uuid_name').innerHTML = uuid;
+        document.getElementById('status').innerHTML = "connected GATT!";
+    }
+
+    //--------------------------------------------------
+    ble.onRead = function (data, uuid){
+        var length = data.byteLength;
+        var d = []
+        for (var i=0; i<length; i++){
+            d.push(data.getUint8(i))
+        }
+        //console.log(d)
+
+        document.getElementById('uuid_name').innerHTML = uuid;
+        document.getElementById('status').innerHTML = length + "Bytes received"
+
+        if (uuid == 'GYRO') {
+            var GYRO_SCALE = (1.063/1000)     //rad/s
+            //var ACCL_SCALE = (1.196/1000)   //m/s^2
+            var ACCL_SCALE = (1/8192)         //g
+            var _int16 = function (msb, lsb) {
+                var tmp = (256.0*msb) + lsb
+                if (tmp > 32767.0) {
+                    tmp -= 65536.0
+                }
+                return tmp
+            }
+
+            for(var i=2; i<=length-12; i+=12) {
+                var g = [_int16(d[i+1],d[i+0]), _int16(d[i+3],d[i+2]), _int16(d[i+5],d[i+4])]
+                var a = [_int16(d[i+7],d[i+6]), _int16(d[i+9],d[i+8]), _int16(d[i+11],d[i+10])]
+
+                if ((g[0]==-32768) && (g[1]==-32768) && (g[2]==-32768)) {   
+                    continue    //to ignore an initial GYRO data (0x8000, 0x8000, 0x8000)
+                }
+                robinAHRS.update(g[0]*GYRO_SCALE, g[1]*GYRO_SCALE, g[2]*GYRO_SCALE, a[0]*ACCL_SCALE, a[1]*ACCL_SCALE, a[2]*ACCL_SCALE)
+            }
+            if (i<length) {
+                console.log(i, length, data)
+            }
+        }
+        if (uuid == 'PROX') {
+            wear  = d[0]        //00 : Unknown, 01 : In-Ear-Proc, 02 : In-Ear, 03 : Out-Ear-Rest, 04 : Out-Ear
+            touch = d[12]       //Touch 00/01
+
+            //+++++++++++++++++++++++ Disable Touch sensing +++++++++++++++++++++++
+            wear = 0
+
+            if (!(gStatus & flgStatus.WEAR) && (wear==0x01)) {
+                var timer = window.setInterval( function() {
+                    document.getElementById("MultiFunctionButton").disabled = true;
+                    Reposition()
+                }, 100);
+                window.setTimeout( function() {
+                    document.getElementById("MultiFunctionButton").disabled = false;
+                    clearInterval(timer)
+                    console.log("Home Posiotion Cleared.")
+                }, 3000)
+            }
+            if ((wear==0x01) || (wear==0x02)) {
+                gStatus |=  flgStatus.WEAR
+            }
+            else {
+                gStatus &= ~flgStatus.WEAR
+            }
+            if (touch!=0) {
+                gStatus |=  flgStatus.TOUCH
+            }
+            else {
+                gStatus &= ~flgStatus.TOUCH
+            }
+        }
+        if (uuid == 'PPG') {
+            var tmp_max = 0
+            var tmp_min = 0
+            for (var i=3; i<d.length; i+=2){
+                var tmp = d[i] + d[i+1]*0x100
+                if (tmp > 32768) {
+                    tmp -= 65536
+                }
+                gPPG.push(tmp)
+
+                if (tmp_max < tmp) {
+                    tmp_max = tmp
+                }
+                if (tmp_min > tmp) {
+                    tmp_min = tmp
+                }
+            }
+            gPPGPeakPos =  tmp_max
+            gPPGPeakNeg = -tmp_min
+            //console.log(gPPGPeak)
+        }
+        if (uuid == 'HEARTRATE') {
+            gPPM = d[1]
+            //console.log(d)
+        }
+        if (uuid == 'TEMPERATURE_DATA') {
+            gTempTb = (d[0] + d[1]*0x100) / 10
+            gTempK  = (d[2] + d[3]*0x100) / 1000
+            gTempTi = (d[4] + d[5]*0x100) / 10
+            gTempTo = (d[6] + d[7]*0x100) / 10
+        }
+        if (uuid == 'TEMPERATURE_VALUE') {
+            gBodyTemp = (d[0] + d[1]*0x100) / 10
+        }
+        if (uuid == 'TEMPERATURE_COEF') {
+            gTempCoef = (d[0] + d[1]*0x100) / 1000
+        }
+        if (uuid == 'GETBDA') {
+            console.log('GAT BDA : '
+             + ' ' + d[0].toString(16)
+             + ':' + d[1].toString(16) 
+             + ':' + d[2].toString(16) 
+             + ':' + d[3].toString(16) 
+             + ':' + d[4].toString(16) 
+             + ':' + d[5].toString(16))
+
+            ble.write('ROLLSWAP',  [0x00])
+            ble.write('DORMANT',  [0x00])
+
+            ble.write('GYROMODE', [gyro_mode])
+            ble.startNotify('GYRO');
+            ble.startNotify('PROX');
+            //ble.startNotify('COMP');
+
+            ble.write('PPGFORMAT', [0x00])
+            ble.startNotify('PPG');
+            ble.startNotify('HEARTRATE');
+
+            ble.startNotify('TEMPERATURE_DATA');
+            ble.read('TEMPERATURE_VALUE');
+            ble.read('TEMPERATURE_COEF');
+
+            if ((d[0]==0xD0) && (d[1]==0x9C) && (d[2]==0x30) && (d[3]==0x0D) && (d[4]==0x93) && (d[5]==0x2a)) {     //FHBY-L
+                robinAHRS.imu.set_gyro_ofs([ 0.00031,  0.00063,  0.00036])
+            }
+            if ((d[0]==0xD0) && (d[1]==0x9C) && (d[2]==0x30) && (d[3]==0x0D) && (d[4]==0x93) && (d[5]==0x2d)) {     //FHBY-R
+                robinAHRS.imu.set_gyro_ofs([-0.00018, -0.00052, -0.00006])
+            }
+            if ((d[0]==0xD0) && (d[1]==0x9C) && (d[2]==0x30) && (d[3]==0x0D) && (d[4]==0x93) && (d[5]==0x00)) {     //S1-L
+                robinAHRS.imu.set_gyro_ofs([ 0.00019,  0.00037, -0.00027])
+            }
+            if ((d[0]==0xD0) && (d[1]==0x9C) && (d[2]==0x30) && (d[3]==0x0D) && (d[4]==0x93) && (d[5]==0x01)) {     //S1-R
+                robinAHRS.imu.set_gyro_ofs([ 0.00033,  0.00014,  0.00021])
+            }
+            if ((d[0]==0xD0) && (d[1]==0x9C) && (d[2]==0x30) && (d[3]==0x0D) && (d[4]==0x93) && (d[5]==0x02)) {     //S2-L
+                robinAHRS.imu.set_gyro_ofs([ 0.00056,  0.00035,  0.00020])
+            }
+            if ((d[0]==0xD0) && (d[1]==0x9C) && (d[2]==0x30) && (d[3]==0x0D) && (d[4]==0x93) && (d[5]==0x03)) {     //S2-R
+                robinAHRS.imu.set_gyro_ofs([ 0.00020, -0.00005,  0.00025])
+            }
+            if ((d[0]==0xD0) && (d[1]==0x9C) && (d[2]==0x30) && (d[3]==0x0D) && (d[4]==0x8B) && (d[5]==0x25)) {     //GO-L
+                robinAHRS.imu.set_gyro_ofs([-0.00003,  0.00124,  0.00019])
+            }
+            if ((d[0]==0xD0) && (d[1]==0x9C) && (d[2]==0x30) && (d[3]==0x0D) && (d[4]==0x8B) && (d[5]==0xC8)) {     //GO-R
+                robinAHRS.imu.set_gyro_ofs([ 0.00133, -0.00168,  0.00045])
+            }
+        }
+    }
+
+    //--------------------------------------------------
+    ble.onWrite = function(uuid){
+        console.log('> onWrite! ' + uuid);
+    }
+
+    //--------------------------------------------------
+    ble.onStartNotify = function(uuid){
+        console.log('> Start Notify! ' + uuid);
+
+        document.getElementById('uuid_name').innerHTML = uuid;
+        document.getElementById('status').innerHTML = "started Notify";
+
+        document.getElementById("startNotifications").disabled = true;
+        document.getElementById("stopNotifications").disabled  = false;
+    }
+
+    //--------------------------------------------------
+    ble.onStopNotify = function(uuid){
+        console.log('> Stop Notify!');
+        gStatus = 0
+
+        document.getElementById('uuid_name').innerHTML = uuid;
+        document.getElementById('status').innerHTML = "stopped Notify";
+
+        document.getElementById("startNotifications").disabled = true;
+        document.getElementById("stopNotifications").disabled  = true;
+    }
+
+    //-------------------------------------------------
+    robin_init = function() {
+        Object.defineProperty(document, 'ROBIN2_GYRO_SERVICE', {value: "41001100-0000-1000-8000-00805f9b0230", writable: false});
+        Object.defineProperty(document, 'ROBIN2_GYRO',         {value: "41001101-0000-1000-8000-00805f9b0230", writable: false});
+        Object.defineProperty(document, 'ROBIN2_GYROMODE',     {value: "41001103-0000-1000-8000-00805f9b0230", writable: false});
+        Object.defineProperty(document, 'ROBIN2_COMP_SERVICE', {value: "41001200-0000-1000-8000-00805f9b0230", writable: false});
+        Object.defineProperty(document, 'ROBIN2_COMP',         {value: "41001201-0000-1000-8000-00805f9b0230", writable: false});
+        Object.defineProperty(document, 'ROBIN2_PROX_SERVICE', {value: "41002000-0000-1000-8000-00805f9b0230", writable: false});
+        Object.defineProperty(document, 'ROBIN2_PROX',         {value: "41002001-0000-1000-8000-00805f9b0230", writable: false});
+
+        Object.defineProperty(document, 'ROBIN2_PPG_SERVICE', {value: "41002100-0000-1000-8000-00805f9b0230", writable: false});
+        Object.defineProperty(document, 'ROBIN2_PPG',         {value: "41002101-0000-1000-8000-00805f9b0230", writable: false});
+        Object.defineProperty(document, 'ROBIN2_PPGFORMAT',   {value: "41002102-0000-1000-8000-00805f9b0230", writable: false});
+        Object.defineProperty(document, 'ROBIN2_HRP_SERVICE', {value: "0000180d-0000-1000-8000-00805f9b34fb", writable: false});
+        Object.defineProperty(document, 'ROBIN2_HRP',         {value: "00002a37-0000-1000-8000-00805f9b34fb", writable: false});
+
+        Object.defineProperty(document, 'ROBIN2_TEMPERATURE_SERVICE', {value: "41001300-0000-1000-8000-00805f9b0230", writable: false});
+        Object.defineProperty(document, 'ROBIN2_TEMPERATURE_DATA',    {value: "41001301-0000-1000-8000-00805f9b0230", writable: false});
+        Object.defineProperty(document, 'ROBIN2_TEMPERATURE_VALUE',   {value: "41001302-0000-1000-8000-00805f9b0230", writable: false});
+        Object.defineProperty(document, 'ROBIN2_TEMPERATURE_COEF',    {value: "41001303-0000-1000-8000-00805f9b0230", writable: false});
+
+        Object.defineProperty(document, 'ROBIN2_COMMON_SERVICE',  {value: "41001000-0000-1000-8000-00805f9b0230", writable: false});
+        Object.defineProperty(document, 'ROBIN2_COMMON_GETBDA',   {value: "41001002-0000-1000-8000-00805f9b0230", writable: false});
+        Object.defineProperty(document, 'ROBIN2_COMMON_DORMANT',  {value: "41001010-0000-1000-8000-00805f9b0230", writable: false});
+        Object.defineProperty(document, 'ROBIN2_COMMON_ROLLSWAP', {value: "41001030-0000-1000-8000-00805f9b0230", writable: false});
+
+        //UUIDの設定
+        ble.setUUID("GYRO", document.ROBIN2_GYRO_SERVICE, document.ROBIN2_GYRO);
+        ble.setUUID("COMP", document.ROBIN2_COMP_SERVICE, document.ROBIN2_COMP);
+        ble.setUUID("PROX", document.ROBIN2_PROX_SERVICE, document.ROBIN2_PROX);
+        ble.setUUID("GYROMODE", document.ROBIN2_GYRO_SERVICE, document.ROBIN2_GYROMODE);
+
+        ble.setUUID("PPG", document.ROBIN2_PPG_SERVICE, document.ROBIN2_PPG);
+        ble.setUUID("PPGFORMAT", document.ROBIN2_PPG_SERVICE, document.ROBIN2_PPGFORMAT);
+        ble.setUUID("HEARTRATE", document.ROBIN2_HRP_SERVICE, document.ROBIN2_HRP);
+
+        ble.setUUID("TEMPERATURE_DATA",  document.ROBIN2_TEMPERATURE_SERVICE, document.ROBIN2_TEMPERATURE_DATA);
+        ble.setUUID("TEMPERATURE_VALUE", document.ROBIN2_TEMPERATURE_SERVICE, document.ROBIN2_TEMPERATURE_VALUE);
+        ble.setUUID("TEMPERATURE_COEF",  document.ROBIN2_TEMPERATURE_SERVICE, document.ROBIN2_TEMPERATURE_COEF);
+
+        ble.setUUID("ROLLSWAP", document.ROBIN2_COMMON_SERVICE, document.ROBIN2_COMMON_ROLLSWAP);
+        ble.setUUID("DORMANT",  document.ROBIN2_COMMON_SERVICE, document.ROBIN2_COMMON_DORMANT);
+        ble.setUUID("GETBDA",   document.ROBIN2_COMMON_SERVICE, document.ROBIN2_COMMON_GETBDA);
+    }
+
+    robin_open = function() {
+        ble.read('GETBDA')
+    }
+
+    robin_close = function() {
+        ble.stopNotify('GYRO');
+        ble.stopNotify('COMP');
+        ble.stopNotify('PROX');
+
+        ble.stopNotify('PPG');
+        ble.stopNotify('HEARTRATE');
+
+        ble.stopNotify('TEMPERATURE_DATA');
+
+        document.getElementById('MultiFunctionButton').textContent = "Reload"
+    }
+
+    robin_mfb = function () {
+        if (document.getElementById('MultiFunctionButton').textContent == "Reload") {
+            location.reload()            
+        } else {
+            Reposition()
+        }
+    }
+</script>
+
+
+<script>
+    //--------------------------------------------------
+    //WebSocket
+    //--------------------------------------------------
+    let wsurl_element = document.getElementById('ws_url');
+    let sock = null
+
+    ws_refresh = function() {
+        if (wsurl_element.disabled) {
+            console.log('WebSocket: Close.');        
+            sock.close()
+        } else {
+            console.log('WebSocket: Reconnect.');        
+            sock = new WebSocket(wsurl_element.value);
+
+            sock.addEventListener('open',function(e){
+                console.log('WebSocket: Connected.');
+                document.getElementById('WebSocket').textContent = "Disconnect"
+                wsurl_element.disabled = true
+
+                window.setInterval(function(){
+                    if ((gStatus & flgStatus.OPENED) && (wsurl_element.disabled)) {
+                        Q = robinAHRS.Quat
+                        d = [
+                            gStatus,
+                            Q[0],
+                            Q[1],
+                            Q[2],
+                            Q[3],
+                        ]
+                        sock.send(d);
+                        //console.log(d)
+                    }
+                }, 100);
+            });
+            sock.onclose = () => {
+                console.log('WebSocket: Closed.');        
+                document.getElementById('WebSocket').textContent = "Connect"
+                wsurl_element.disabled = false
+            }
+            sock.onmessage = function(e) {
+                console.log(e.data)
+            }
+        }
+    }
+    ws_refresh()
+
+    //--------------------------------------------------
+    // Onload setups and Buttons
+    //--------------------------------------------------
+    window.onload = function () {
+        robin_init();
+        
+        document.getElementById("startNotifications").disabled = false;
+        document.getElementById("stopNotifications").disabled  = true;
+    }
+
+    document.getElementById('startNotifications').addEventListener('click', function(e) {
+        robin_open();
+    });
+
+    document.getElementById('stopNotifications').addEventListener('click', function() {
+        robin_close();
+    });
+
+    document.getElementById('MultiFunctionButton').addEventListener('click', function(e) {
+        robin_mfb();
+    });
+
+    document.getElementById('WebSocket').addEventListener('click', function(e) {
+        ws_refresh();
+    });
+
+    document.getElementById('CSVDownload').addEventListener('click', function(e) {
+        let records = robinAHRS.history()
+        let csv_data = records.map((record) => record.join(',')).join('\r\n')
+
+        let bite_order_mark = new Uint8Array([0xEF, 0xBB, 0xBF])       //UTF-8
+        let blob = new Blob([ bite_order_mark, csv_data ], { 'type' : 'text/csv' })
+
+        let downloadLink = document.createElement('a')
+        downloadLink.download = 'sample.csv'
+        downloadLink.href = URL.createObjectURL(blob)
+        downloadLink.dataset.downloadurl = ['text/plain', downloadLink.download, downloadLink.href].join(':')
+        downloadLink.click()
+    });
+</script>
+
+
+<!--=======================================================================================-->
+<script type="module">
+    //--------------------------------------------------
+    //3D Rendering
+    //--------------------------------------------------
+    import * as THREE from 'three';
+
+    const width = 200;
+    const height = 200;
+    const renderer = new THREE.WebGLRenderer({
+        canvas: document.querySelector("#canvas_1a"),
+    });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(width, height);
+
+    const scene  = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(45, width / height);
+    camera.position.set(1000, 0, 0);
+    camera.lookAt(new THREE.Vector3(0, 0, 0));
+
+    const geometry  = new THREE.BoxGeometry(400, 400, 400);
+    const material1 = new THREE.MeshNormalMaterial();
+    const material = [
+        new THREE.MeshBasicMaterial({map: new THREE.TextureLoader().load('./components/smile.png')}),
+        new THREE.MeshBasicMaterial({color:'lightgreen'}),
+        new THREE.MeshBasicMaterial({color:'lightsteelblue'}),
+        new THREE.MeshBasicMaterial({color:'lightseagreen'}),
+        new THREE.MeshBasicMaterial({color:'lightyellow'}),
+        new THREE.MeshBasicMaterial({color:'lightcyan'}),
+    ];
+    const box = new THREE.Mesh(geometry, material);
+    box.useQuaternion = true;
+    
+    scene.add(box);
+    tick();
+    
+    function tick() {
+        let Q = robinAHRS.Quat
+        box.quaternion.copy(new THREE.Quaternion(-Q[2], Q[3], -Q[1], Q[0]))
+        renderer.render(scene, camera);
+
+        requestAnimationFrame(tick);
+    }
+</script>
+
+<script type="text/javascript" src="./components/chart.min.js"></script>
+<script>
+    //--------------------------------------------------
+    // Charts and PPG singnal processings
+    //--------------------------------------------------
+    var chrt_1 = document.getElementById("canvas_2a").getContext("2d");
+    var chartId_1 = new Chart(chrt_1, {
+        type: 'line',
+        data: {
+            labels: Array.from(Array(100).keys()),
+            datasets: [{
+                label: "X",
+                data: [],
+                backgroundColor: 'rgba(255, 100, 100, 0.3)',
+                borderColor: 'rgba(255, 100, 100, 0.8)',
+                borderWidth: 2,
+                pointRadius: 0,
+            },{
+                label: "Y",
+                data: [],
+                backgroundColor: 'rgba(100, 255, 100, 0.3)',
+                borderColor: 'rgba(100, 255, 100, 0.8)',
+                borderWidth: 2,
+                pointRadius: 0,
+            },{
+                label: "Z",
+                data: [],
+                backgroundColor: 'rgba(100, 100, 255, 0.3)',
+                borderColor: 'rgba(100, 100, 255, 0.8)',
+                borderWidth: 2,
+                pointRadius: 0,
+            }],
+        },
+        options: {
+            title: {
+                display: true,
+                text: 'Average',
+            },
+            animation: false,
+            responsive: false,
+            plugins: {
+                legend: {
+                    display: true,
+                },
+            },
+            scales: {
+                y: {
+                    max: 3,
+                    min: -1,
+                    ticks: {
+                        stepSize: 1.0
+                    },
+                },
+            },
+        },
+    });
+    let timerId = setInterval(() => {
+        let xyz = robinAHRS.BodyBalance
+
+        if (gStatus & flgStatus.OPENED) {
+            for(var i=0; i<3; i+=1) {
+                chartId_1.data.datasets[i].data.push(xyz[i]);
+                
+                if (chartId_1.data.datasets[i].data.length > 100) {
+                    chartId_1.data.datasets[i].data.shift()
+                }
+            }
+        }
+        chartId_1.update();
+    }, 100);
+
+</script>
+
+<!--=======================================================================================-->
+<script>
+    var chrt_2 = document.getElementById("canvas_2b").getContext("2d");
+    var chartId_2 = new Chart(chrt_2, {
+        type: 'line',
+        data: {
+            labels: Array.from(Array(100).keys()),
+            datasets: [{
+                label: "Heart Rate",
+                data: [],
+                backgroundColor: 'rgba(100, 100, 255, 0.3)',
+                borderColor: 'rgba(100, 100, 255, 0.8)',
+                borderWidth: 2,
+                pointRadius: 0,
+            }],
+        },
+        options: {
+            title: {
+                display: true,
+                text: 'Average',
+            },
+            animation: false,
+            responsive: false,
+            plugins: {
+                legend: {
+                    display: true,
+                },
+            },
+            scales: {
+                y: {
+                    max: 160,
+                    min: 0,
+                    ticks: {
+                        stepSize: 10.0
+                    },
+                },
+            },
+        },
+    });
+    let timerId_2b = setInterval(() => {
+        if (gStatus & flgStatus.OPENED) {
+            chartId_2.data.datasets[0].data.push(gPPM);
+            
+            if (chartId_2.data.datasets[0].data.length > 100) {
+                chartId_2.data.datasets[0].data.shift()
+            }
+        }
+        chartId_2.update();
+    }, 100);
+
+</script>
+
+<!--=======================================================================================-->
+<script>
+    var chrt_3 = document.getElementById("canvas_2c").getContext("2d");
+    var chartId_3 = new Chart(chrt_3, {
+        type: 'line',
+        data: {
+            labels: Array.from(Array(100).keys()),
+            datasets: [{
+                label: "Temperature",
+                data: [],
+                backgroundColor: 'rgba(100, 100, 255, 0.3)',
+                borderColor: 'rgba(100, 100, 255, 0.8)',
+                borderWidth: 2,
+                pointRadius: 0,
+            }],
+        },
+        options: {
+            title: {
+                display: true,
+                text: 'Average',
+            },
+            animation: false,
+            responsive: false,
+            plugins: {
+                legend: {
+                    display: true,
+                },
+            },
+            scales: {
+                y: {
+                    max: 45,
+                    min: 25,
+                    ticks: {
+                        stepSize: 5.0
+                    },
+                },
+            },
+        },
+    });
+    let timerId_2c = setInterval(() => {
+        if (gStatus & flgStatus.OPENED) {
+            chartId_3.data.datasets[0].data.push(gTempTb);
+            
+            if (chartId_3.data.datasets[0].data.length > 100) {
+                chartId_3.data.datasets[0].data.shift()
+            }
+        }
+        chartId_3.update();
+    }, 100);
+</script>
+
+<!--=======================================================================================-->
+<script>
+    var chrt_1b = document.getElementById("canvas_1b").getContext("2d");
+    var chartId_1b = new Chart(chrt_1b, {
+        type: 'line',
+        data: {
+            labels: Array.from(Array(100).keys()),
+            datasets: [{
+                label: "Sound Level",
+                data: [],
+                backgroundColor: 'rgba(100, 100, 255, 0.3)',
+                borderColor: 'rgba(100, 100, 255, 0.8)',
+                borderWidth: 2,
+                pointRadius: 0,
+            }],
+        },
+        options: {
+            title: {
+                display: true,
+                text: 'Average',
+            },
+            animation: false,
+            responsive: false,
+            plugins: {
+                legend: {
+                    display: true,
+                },
+            },
+            scales: {
+                y: {
+                    max: 500,
+                    min: 0,
+                    ticks: {
+                        stepSize: 100
+                    },
+                },
+            },
+        },
+    });
+
+    var peak_hold = 0
+    let timerId_1b = setInterval(() => {
+        let peak = (gPPG_Phase > 0)? gPPGPeakPos : gPPGPeakNeg
+
+        if (gStatus & flgStatus.OPENED) {
+            chartId_1b.data.datasets[0].data.push(peak);
+            
+            if (chartId_1b.data.datasets[0].data.length > 100) {
+                chartId_1b.data.datasets[0].data.shift()
+            }
+        }
+        chartId_1b.update();
+    }, 100);
+</script>
+
+
+</body>
+</html>
