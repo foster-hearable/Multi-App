@@ -1,7 +1,7 @@
 # Hearable Multi-App
 ---
 ## Overview
-Hearable Multi-Appはヒアラブルデバイス（フォスター電機 RN002）に実装されているセンシング機能の代表的な値を表示するためのフロントエンドアプリケーションです。\
+Hearable Multi-Appはヒアラブルデバイス（フォスター電機 RN002）に実装されているセンシング機能の取得データを表示するためのフロントエンドアプリケーションです。\
 ★ デモ用Webサイト [https://foster-hearable.github.io/Multi-App/](https://foster-hearable.github.io/Multi-App/)
 
 WebBluetoothを用いてヒアラブルデバイスRN002からデータ取得を行い、各センシングデータの表示やWebSocketサーバーへのデータ送出を行います。\
