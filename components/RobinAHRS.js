@@ -14,15 +14,22 @@ class Data_Storage {
             "IMU Gx", "IMU Gy", "IMU Gz",
             "IMU Ax", "IMU Ay", "IMU Az",
             "Acc X",  "Acc Y",  "Acc Z",
-            "Euler X",  "Euler Y",  "Euler Z"]]
+            "Euler X",  "Euler Y",  "Euler Z",
+            "Quat W",  "Quat X",  "Quat Y",  "Quat Z", 
+            "qHome W", "qHome X", "qHome Y", "qHome Z", 
+            "qZero W", "qZero X", "qZero Y", "qZero Z", 
+        ]]
         this.data = [[]]
     }
-    update(imu_g, imu_a, accel, euler) {
+    update(imu_g, imu_a, accel, euler, quat, qHome, qZero) {
         let tmp = [
             imu_g[0], imu_g[1], imu_g[2], 
             imu_a[0], imu_a[1], imu_a[2], 
             accel[0], accel[1], accel[2], 
-            euler[0], euler[1], euler[2]
+            euler[0], euler[1], euler[2],
+            quat[0],  quat[1],  quat[2],  quat[3],
+            qHome[0], qHome[1], qHome[2], qHome[3],
+            qZero[0], qZero[1], qZero[2], qZero[3],
         ]
         this.data.push(tmp)
         if (this.data.length > this.size) {
@@ -37,7 +44,7 @@ class Data_Storage {
 class IMU_Filter {
     constructor(fs) {
         this.fs   = fs
-        this.size = Math.round(this.fs*5.0)
+        this.size = Math.round(this.fs*7.5)
         this.g = [[0.0, 0.0, 0.0]]
         this.g_ofs = [0.0, 0.0, 0.0]
         this.g_ofs_hist = []
@@ -109,6 +116,14 @@ class IMU_Filter {
     }
 
     set_gyro_ofs(ofs) {
+        if (ofs === undefined) {
+            ofs = [this.g_ofs[0], this.g_ofs[1], this.g_ofs[2]]
+
+            ofs[0] += (this.g.reduce((g,val)=>g+val[0], 0)/this.g.length)
+            ofs[1] += (this.g.reduce((g,val)=>g+val[1], 0)/this.g.length)
+            ofs[2] += (this.g.reduce((g,val)=>g+val[2], 0)/this.g.length)
+        }
+
         console.log('*** SET GYRO OFFSET *** : ' + ofs)
         this.g_ofs = ofs
         this.g_ofs_hist = []
@@ -211,7 +226,7 @@ class RobinAHRS {
 
         this.accl = this.rotate(this.quat, [0, accl[0], accl[1], accl[2]]).slice(1,4)
 
-        this.data_log.update([g0, g1, g2], [a0, a1, a2], this.accl, this.to_euler(this.prod(this.qZero, this.quat)))
+        this.data_log.update([g0, g1, g2], [a0, a1, a2], this.accl, this.to_euler(this.prod(this.qHome, this.quat)), this.quat, this.qHome, this.qZero)
     }
 
     reposition() {

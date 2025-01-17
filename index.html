@@ -40,17 +40,16 @@ Released under the MIT license
         <p>
             <canvas id="canvas_1a" width="200px" height="200px"></canvas>
             <canvas id="canvas_1b" width="200px" height="200px"></canvas>
+            <br/>
+            <button id="startNotifications" class="button">Start Notify</button>
+            <button id="stopNotifications" class="button">Stop Notify</button>
+            <button id="MultiFunctionButton" class="button">Reposition</button>
+        </p>
         <p>
             <canvas id="canvas_2a" width="500px" height="200px"></canvas>
             <canvas id="canvas_2b" width="500px" height="200px"></canvas>
             <canvas id="canvas_2c" width="500px" height="200px"></canvas>    
         </p>
-    </div>
-    <br/>
-    <div class="flex" >
-        <button id="startNotifications" class="button">Start Notify</button>
-        <button id="stopNotifications" class="button">Stop Notify</button>
-        <button id="MultiFunctionButton" class="button">Reposition</button>
     </div>
     <br/>
     <div class="flex" >
@@ -264,8 +263,9 @@ Released under the MIT license
              + ':' + d[4].toString(16) 
              + ':' + d[5].toString(16))
 
-            ble.write('ROLLSWAP',  [0x00])
-            ble.write('DORMANT',  [0x00])
+            ble.write('ROLLSWAP',  [0x00])  //Roll Swap : Disable
+            ble.write('DORMANT',  [0x00])   //Dormant Timer : Disable
+            ble.write('ANCMODE',  [0x02])   //ANC Mode : Leak Through Mode
 
             ble.write('GYROMODE', [gyro_mode])
             ble.startNotify('GYRO');
@@ -280,30 +280,9 @@ Released under the MIT license
             ble.read('TEMPERATURE_VALUE');
             ble.read('TEMPERATURE_COEF');
 
-            if ((d[0]==0xD0) && (d[1]==0x9C) && (d[2]==0x30) && (d[3]==0x0D) && (d[4]==0x93) && (d[5]==0x2a)) {     //FHBY-L
-                robinAHRS.imu.set_gyro_ofs([ 0.00031,  0.00063,  0.00036])
-            }
-            if ((d[0]==0xD0) && (d[1]==0x9C) && (d[2]==0x30) && (d[3]==0x0D) && (d[4]==0x93) && (d[5]==0x2d)) {     //FHBY-R
-                robinAHRS.imu.set_gyro_ofs([-0.00018, -0.00052, -0.00006])
-            }
-            if ((d[0]==0xD0) && (d[1]==0x9C) && (d[2]==0x30) && (d[3]==0x0D) && (d[4]==0x93) && (d[5]==0x00)) {     //S1-L
-                robinAHRS.imu.set_gyro_ofs([ 0.00019,  0.00037, -0.00027])
-            }
-            if ((d[0]==0xD0) && (d[1]==0x9C) && (d[2]==0x30) && (d[3]==0x0D) && (d[4]==0x93) && (d[5]==0x01)) {     //S1-R
-                robinAHRS.imu.set_gyro_ofs([ 0.00033,  0.00014,  0.00021])
-            }
-            if ((d[0]==0xD0) && (d[1]==0x9C) && (d[2]==0x30) && (d[3]==0x0D) && (d[4]==0x93) && (d[5]==0x02)) {     //S2-L
-                robinAHRS.imu.set_gyro_ofs([ 0.00056,  0.00035,  0.00020])
-            }
-            if ((d[0]==0xD0) && (d[1]==0x9C) && (d[2]==0x30) && (d[3]==0x0D) && (d[4]==0x93) && (d[5]==0x03)) {     //S2-R
-                robinAHRS.imu.set_gyro_ofs([ 0.00020, -0.00005,  0.00025])
-            }
-            if ((d[0]==0xD0) && (d[1]==0x9C) && (d[2]==0x30) && (d[3]==0x0D) && (d[4]==0x8B) && (d[5]==0x25)) {     //GO-L
-                robinAHRS.imu.set_gyro_ofs([-0.00003,  0.00124,  0.00019])
-            }
-            if ((d[0]==0xD0) && (d[1]==0x9C) && (d[2]==0x30) && (d[3]==0x0D) && (d[4]==0x8B) && (d[5]==0xC8)) {     //GO-R
-                robinAHRS.imu.set_gyro_ofs([ 0.00133, -0.00168,  0.00045])
-            }
+            setTimeout( function() {
+                robinAHRS.imu.set_gyro_ofs()
+            }, 5000)
         }
     }
 
@@ -360,6 +339,7 @@ Released under the MIT license
         Object.defineProperty(document, 'ROBIN2_COMMON_GETBDA',   {value: "41001002-0000-1000-8000-00805f9b0230", writable: false});
         Object.defineProperty(document, 'ROBIN2_COMMON_DORMANT',  {value: "41001010-0000-1000-8000-00805f9b0230", writable: false});
         Object.defineProperty(document, 'ROBIN2_COMMON_ROLLSWAP', {value: "41001030-0000-1000-8000-00805f9b0230", writable: false});
+        Object.defineProperty(document, 'ROBIN2_COMMON_ANCMODE',  {value: "41001090-0000-1000-8000-00805f9b0230", writable: false});
 
         //UUIDの設定
         ble.setUUID("GYRO", document.ROBIN2_GYRO_SERVICE, document.ROBIN2_GYRO);
@@ -378,6 +358,7 @@ Released under the MIT license
         ble.setUUID("ROLLSWAP", document.ROBIN2_COMMON_SERVICE, document.ROBIN2_COMMON_ROLLSWAP);
         ble.setUUID("DORMANT",  document.ROBIN2_COMMON_SERVICE, document.ROBIN2_COMMON_DORMANT);
         ble.setUUID("GETBDA",   document.ROBIN2_COMMON_SERVICE, document.ROBIN2_COMMON_GETBDA);
+        ble.setUUID("ANCMODE",  document.ROBIN2_COMMON_SERVICE, document.ROBIN2_COMMON_ANCMODE);
     }
 
     robin_open = function() {
@@ -519,22 +500,27 @@ Released under the MIT license
     const geometry  = new THREE.BoxGeometry(400, 400, 400);
     const material1 = new THREE.MeshNormalMaterial();
     const material = [
+        new THREE.MeshBasicMaterial({map: new THREE.TextureLoader().load('./components/smile_L.png')}),
+        new THREE.MeshBasicMaterial({map: new THREE.TextureLoader().load('./components/smile_R.png')}),
+        new THREE.MeshBasicMaterial({map: new THREE.TextureLoader().load('./components/smile_Top.png')}),
+        new THREE.MeshBasicMaterial({color:'lightseagreen'}),
         new THREE.MeshBasicMaterial({map: new THREE.TextureLoader().load('./components/smile.png')}),
         new THREE.MeshBasicMaterial({color:'lightgreen'}),
-        new THREE.MeshBasicMaterial({color:'lightsteelblue'}),
-        new THREE.MeshBasicMaterial({color:'lightseagreen'}),
-        new THREE.MeshBasicMaterial({color:'lightyellow'}),
-        new THREE.MeshBasicMaterial({color:'lightcyan'}),
     ];
-    const box = new THREE.Mesh(geometry, material);
-    box.useQuaternion = true;
-    
-    scene.add(box);
+    const objA = new THREE.Mesh(geometry, material);
+    objA.useQuatermion = true;
+    objA.quaternion.setFromEuler(new THREE.Euler(0, Math.PI/2, 0, 'XYZ'))
+
+    var obj = new THREE.Group();
+    obj.add(objA);
+    obj.useQuaternion = true;
+    obj.position.set(0, 10, 0)
+    scene.add(obj);
     tick();
     
     function tick() {
         let Q = robinAHRS.Quat
-        box.quaternion.copy(new THREE.Quaternion(-Q[2], Q[3], -Q[1], Q[0]))
+        obj.quaternion.copy(new THREE.Quaternion(-Q[2], Q[3], -Q[1], Q[0]))
         renderer.render(scene, camera);
 
         requestAnimationFrame(tick);
