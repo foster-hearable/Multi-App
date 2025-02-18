@@ -21,7 +21,31 @@ Released under the MIT license
         display: flex;
         gap: 6px 6px;
         flex-direction: column;
-    }    
+    }
+    .toast {
+        position: fixed;
+        z-index: 9999;
+        display: flex;
+        top: -140px;
+        left: 50%;
+        transform: translate(-50%, 0);
+        width: 100%;
+        max-width: 600px;
+        padding: 20px 25px;
+        border-radius: 5px;
+        background: rgb(189,185,255);
+        background: linear-gradient(90deg, rgba(189,185,255,1) 0%, rgba(103,184,255,1) 100%);
+        align-items: center;
+        justify-content: flex-start;
+        gap: 20px;
+        filter: drop-shadow(0px 2px 8px #ddd);
+        transition: 0.8s ease-in-out;
+    }
+    .toast.show{
+        top: 300px;
+        transition: 0.1s linear;
+    }
+    
   </style>
   <head>
     <meta charset="utf-8">
@@ -66,6 +90,7 @@ Released under the MIT license
     <div class="footer">
         For more information, see <a href="https://github.com/foster-hearable/HeadTracker" target="_blank">GitHub</a> !
     </div>
+    <div id="topToast" class="toast">Calibrating.... (5sec)</div>
 </div>
 
 <script type="importmap">
@@ -263,7 +288,7 @@ Released under the MIT license
              + ':' + d[4].toString(16) 
              + ':' + d[5].toString(16))
 
-            ble.write('ROLLSWAP',  [0x00])  //Roll Swap : Disable
+            ble.write('ROLESWAP', [0x00])  //Roll Swap : Disable
             ble.write('DORMANT',  [0x00])   //Dormant Timer : Disable
             ble.write('ANCMODE',  [0x02])   //ANC Mode : Leak Through Mode
 
@@ -283,6 +308,16 @@ Released under the MIT license
             setTimeout( function() {
                 robinAHRS.imu.set_gyro_ofs()
             }, 5000)
+
+            //------------------------
+            const toast = document.getElementById("topToast")
+            toast.className = toast.className.replace("toast", "toast show")
+            //console.log(toast, toast.className)
+
+            setTimeout( function(){
+                toast.className = toast.className.replace("toast show", "toast")
+            }, 6000);
+            //------------------------
         }
     }
 
@@ -338,7 +373,7 @@ Released under the MIT license
         Object.defineProperty(document, 'ROBIN2_COMMON_SERVICE',  {value: "41001000-0000-1000-8000-00805f9b0230", writable: false});
         Object.defineProperty(document, 'ROBIN2_COMMON_GETBDA',   {value: "41001002-0000-1000-8000-00805f9b0230", writable: false});
         Object.defineProperty(document, 'ROBIN2_COMMON_DORMANT',  {value: "41001010-0000-1000-8000-00805f9b0230", writable: false});
-        Object.defineProperty(document, 'ROBIN2_COMMON_ROLLSWAP', {value: "41001030-0000-1000-8000-00805f9b0230", writable: false});
+        Object.defineProperty(document, 'ROBIN2_COMMON_ROLESWAP', {value: "41001030-0000-1000-8000-00805f9b0230", writable: false});
         Object.defineProperty(document, 'ROBIN2_COMMON_ANCMODE',  {value: "41001090-0000-1000-8000-00805f9b0230", writable: false});
 
         //UUIDの設定
@@ -355,7 +390,7 @@ Released under the MIT license
         ble.setUUID("TEMPERATURE_VALUE", document.ROBIN2_TEMPERATURE_SERVICE, document.ROBIN2_TEMPERATURE_VALUE);
         ble.setUUID("TEMPERATURE_COEF",  document.ROBIN2_TEMPERATURE_SERVICE, document.ROBIN2_TEMPERATURE_COEF);
 
-        ble.setUUID("ROLLSWAP", document.ROBIN2_COMMON_SERVICE, document.ROBIN2_COMMON_ROLLSWAP);
+        ble.setUUID("ROLESWAP", document.ROBIN2_COMMON_SERVICE, document.ROBIN2_COMMON_ROLESWAP);
         ble.setUUID("DORMANT",  document.ROBIN2_COMMON_SERVICE, document.ROBIN2_COMMON_DORMANT);
         ble.setUUID("GETBDA",   document.ROBIN2_COMMON_SERVICE, document.ROBIN2_COMMON_GETBDA);
         ble.setUUID("ANCMODE",  document.ROBIN2_COMMON_SERVICE, document.ROBIN2_COMMON_ANCMODE);
@@ -443,6 +478,7 @@ Released under the MIT license
         
         document.getElementById("startNotifications").disabled = false;
         document.getElementById("stopNotifications").disabled  = true;
+
     }
 
     document.getElementById('startNotifications').addEventListener('click', function(e) {
